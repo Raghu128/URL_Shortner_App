@@ -5,26 +5,21 @@
 
 # ─── Stage 1: Base ───
 FROM node:20-alpine AS base
-WORKDIR /app
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
 RUN apk add --no-cache libc6-compat
+WORKDIR /app
 
-# ─── Stage 2: Dependencies ───
-FROM base AS deps
-
-# Copy root workspace config + lockfile
-COPY package.json package-lock.json ./
-COPY apps/web/package.json ./apps/web/package.json
-
-# Install only the web workspace dependencies
-RUN npm ci --workspace=apps/web --include-workspace-root
-
-# ─── Stage 3: Build ───
+# ─── Stage 2: Install and Build ───
 FROM base AS build
 
-# Copy the entire workspace structure so Next.js can resolve packages
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package.json ./package.json
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+# Copy package descriptors
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/web/package.json ./apps/web/package.json
+
+# Install dependencies (only for web + root, effectively isolating deps)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --filter=web...
 
 # Copy web source code
 COPY apps/web ./apps/web
@@ -35,9 +30,9 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Build Next.js
-RUN cd apps/web && npm run build
+RUN pnpm --filter web build
 
-# ─── Stage 4: Production ───
+# ─── Stage 3: Production ───
 FROM base AS production
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -46,13 +41,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy standalone output (preserves monorepo structure: apps/web/server.js)
+# Copy standalone output (preserves monorepo structure)
 COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 
 # Copy static assets into the correct path
 COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
-
-# Copy public assets
 COPY --from=build --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 
 USER nextjs
@@ -61,5 +54,4 @@ EXPOSE 3001
 ENV PORT=3001
 ENV HOSTNAME="0.0.0.0"
 
-# server.js is at apps/web/server.js in standalone monorepo output
 CMD ["node", "apps/web/server.js"]

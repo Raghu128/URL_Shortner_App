@@ -1,46 +1,52 @@
 # ════════════════════════════════════════════
 # Multi-stage Dockerfile for the API server
+# Build from monorepo root: docker build -f apps/api/Dockerfile .
 # ════════════════════════════════════════════
 
 # ─── Stage 1: Base ───
 FROM node:20-alpine AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+RUN apk add --no-cache dumb-init libc6-compat
 WORKDIR /app
-RUN apk add --no-cache dumb-init
 
-# ─── Stage 2: Dependencies ───
-FROM base AS deps
-COPY package.json package-lock.json* ./
-COPY prisma ./prisma/
-RUN npm ci
-RUN npx prisma generate
+# ─── Stage 2: Install and Build ───
+FROM base AS build
 
-# ─── Stage 3: Development (with hot reload) ───
-FROM deps AS development
-COPY . .
-ENV NODE_ENV=development
-CMD ["npx", "tsx", "watch", "src/server.ts"]
+# Copy package descriptors
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/api/package.json ./apps/api/package.json
 
-# ─── Stage 4: Build ───
-FROM deps AS build
-COPY . .
-RUN npm run build
+# Install dependencies for API ONLY (isolated from web)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --filter=api...
 
-# ─── Stage 5: Production ───
+# Copy API source code
+COPY apps/api ./apps/api
+
+# Generate Prisma client for build
+RUN pnpm --filter api exec prisma generate
+
+# Build the API project
+RUN pnpm --filter api build
+
+# Deploy only the api app and its production dependencies to an isolated directory
+RUN pnpm --filter api --prod deploy --legacy /app/out/api
+
+# Generate Prisma client inside the deployed production folder
+RUN cd /app/out/api && npx prisma@6.4.1 generate
+
+# ─── Stage 3: Production ───
 FROM base AS production
 ENV NODE_ENV=production
-
-# Copy only production deps
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
-
-# Copy built output and Prisma client
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/prisma ./prisma
-COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
 
 # Run as non-root user
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S appuser -u 1001
+
+# Copy the completely isolated, production-ready app
+COPY --from=build --chown=appuser:nodejs /app/out/api /app
+
 USER appuser
 
 EXPOSE 3000

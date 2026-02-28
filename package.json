@@ -3,23 +3,20 @@
   "version": "1.0.0",
   "private": true,
   "description": "A high-performance URL shortener with read/write split architecture",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "packageManager": "pnpm@10.6.2",
   "scripts": {
-    "dev": "npm run dev --workspace=apps/api",
-    "dev:api": "npm run dev --workspace=apps/api",
-    "dev:web": "npm run dev --workspace=apps/web",
-    "build": "npm run build --workspace=apps/api",
-    "build:web": "npm run build --workspace=apps/web",
-    "test": "npm run test --workspace=apps/api",
-    "lint": "npm run lint --workspace=apps/api",
+    "dev": "pnpm --filter api dev",
+    "dev:api": "pnpm --filter api dev",
+    "dev:web": "pnpm --filter web dev",
+    "build": "pnpm --filter api build",
+    "build:web": "pnpm --filter web build",
+    "test": "pnpm --filter api test",
+    "lint": "pnpm --filter api lint",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "docker:dev": "docker compose -f infra/docker-compose.dev.yml up -d",
     "docker:down": "docker compose -f infra/docker-compose.dev.yml down",
-    "db:migrate": "npm run db:migrate --workspace=apps/api",
-    "db:seed": "npm run db:seed --workspace=apps/api"
+    "db:migrate": "pnpm --filter api db:migrate",
+    "db:seed": "pnpm --filter api db:seed"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -12,7 +12,7 @@ const authService = new AuthService(authRepository);
 const authController = new AuthController(authService);
 
 // ─── Routes (/api/v1/auth) ───
-export const authRouter = Router();
+export const authRouter: Router = Router();
 
 authRouter.post(
     '/register',

@@ -15,7 +15,7 @@ const urlService = new UrlService(urlRepository, cacheService);
 const urlController = new UrlController(urlService);
 
 // ─── API Routes (/api/v1/urls) ───
-export const urlApiRouter = Router();
+export const urlApiRouter: Router = Router();
 
 // Create short URL (rate limited, optional auth)
 urlApiRouter.post(
@@ -59,7 +59,7 @@ urlApiRouter.delete(
 );
 
 // ─── Redirect Route (mounted at root level) ───
-export const redirectRouter = Router();
+export const redirectRouter: Router = Router();
 
 redirectRouter.get(
     '/:code',

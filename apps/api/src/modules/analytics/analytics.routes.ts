@@ -12,7 +12,7 @@ const analyticsService = new AnalyticsService(analyticsRepository);
 const analyticsController = new AnalyticsController(analyticsService);
 
 // ─── Routes (/api/v1/analytics) ───
-export const analyticsRouter = Router();
+export const analyticsRouter: Router = Router();
 
 analyticsRouter.get(
     '/:code',
