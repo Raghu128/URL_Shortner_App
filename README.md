@@ -1,8 +1,14 @@
 # 🔗 Shrinkr — High-Performance URL Shortener
 
-A production-grade URL shortener built with **read/write split architecture**, designed for high read throughput (90%+ reads), sub-10ms redirects, and real-time analytics.
+[![Node.js](https://img.shields.io/badge/Node.js-20.x-green.svg)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org)
+[![Next.js](https://img.shields.io/badge/Next.js-16.1-black.svg)](https://nextjs.org)
+[![Prisma](https://img.shields.io/badge/Prisma-6.4-1b222d.svg)](https://www.prisma.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> Built with Node.js, Express, TypeScript, PostgreSQL, Redis, RabbitMQ, and Next.js.
+A **production-grade URL shortener** built to handle massive scale. Features a stateless **Modular Monolith** architecture with **Read/Write DB splitting**, designed for high read throughput (90%+ reads), sub-10ms redirects, and real-time asynchronous analytics.
+
+> Built with Node.js, Express, TypeScript, PostgreSQL, Redis, RabbitMQ, and Next.js. Engineered for zero-downtime horizontal scaling.
 
 ---
 
@@ -227,7 +233,35 @@ graph LR
 
 ---
 
-## 🛠 Tech Stack
+## � Scalability & The Modular Monolith
+
+This system is built as a **Modular Monolith**. It runs as a single Node.js instance, but internally acts like strict microservices. This provides the deployment simplicity of a monolith with the strict boundaries of microservices.
+
+### Handling Massive Traffic (Horizontal Scaling)
+Because the API server is **100% Stateless** (sessions in JWTs, caches in Redis), you can infinitely scale out by running multiple copies of the API server behind a Load Balancer (Nginx/AWS ALB). The async nature of Node.js ensures a single instance handles thousands of concurrent redirects easily.
+
+```mermaid
+graph TD
+    LB[Nginx Load Balancer] --> API1(API Instance 1)
+    LB --> API2(API Instance 2)
+    LB --> API3(API Instance n)
+    API1 --> R[(Redis Cluster)]
+    API2 --> R
+    API3 --> R
+```
+
+### The Path to Microservices (Splitting the API)
+URL Shorteners receive extremely imbalanced traffic: the `/:code` Redirect endpoint gets 99% of requests, while `/api/v1/auth` gets <1%.
+
+If your traffic scales so high that pulling 50 identical full-stack API servers becomes too expensive, **our strict directory structure makes it trivial to split**:
+
+1. Clone the repo to Server A. Delete the `auth` and `analytics` modules. Deploy as the **Redirect Service** (scaled to 50x instances).
+2. Clone the repo to Server B. Delete the `url` module. Deploy as the **Auth/Dashboard Service** (scaled to 2x instances).
+3. The codebase is already architected to support this with zero refactoring.
+
+---
+
+## �🛠 Tech Stack
 
 ### Backend
 
