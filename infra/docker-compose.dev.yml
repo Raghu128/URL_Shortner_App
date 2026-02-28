@@ -1,0 +1,87 @@
+services:
+  # ═══════════════════════════════════════
+  # PostgreSQL PRIMARY (Writes Only)
+  # ═══════════════════════════════════════
+  pg-primary:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: urlshortener
+      POSTGRES_USER: urlshortener
+      POSTGRES_PASSWORD: urlshortener
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_primary:/var/lib/postgresql/data
+    command: >
+      postgres -c wal_level=replica -c max_wal_senders=3 -c max_replication_slots=3 -c hot_standby=on
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U urlshortener" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════
+  # PostgreSQL READ REPLICA (Reads Only)
+  # In dev: separate instance with same schema
+  # In prod: use streaming replication from primary
+  # ═══════════════════════════════════════
+  pg-replica:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: urlshortener
+      POSTGRES_USER: urlshortener
+      POSTGRES_PASSWORD: urlshortener
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_replica:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U urlshortener" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════
+  # Redis (Cache + Rate Limiting)
+  # ═══════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════
+  # RabbitMQ (Message Queue for Analytics)
+  # ═══════════════════════════════════════
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672" # AMQP
+      - "15672:15672" # Management UI (http://localhost:15672, guest/guest)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    restart: unless-stopped
+
+volumes:
+  pgdata_primary:
+  pgdata_replica:
+  redisdata:
+  rabbitmqdata:
