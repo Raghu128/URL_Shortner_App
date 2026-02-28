@@ -1,4 +1,4 @@
-import { encodeToBase62, decodeFromBase62, isValidShortCode } from '../../common/utils/hashGenerator';
+import { encodeToBase62, decodeFromBase62, isValidShortCode } from '../../../common/utils/hashGenerator';
 
 describe('hashGenerator', () => {
     describe('encodeToBase62', () => {

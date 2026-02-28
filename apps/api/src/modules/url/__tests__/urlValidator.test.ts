@@ -1,7 +1,7 @@
-import { validateUrl } from '../../common/utils/urlValidator';
+import { validateUrl } from '../../../common/utils/urlValidator';
 
 // Mock config
-jest.mock('../../config', () => ({
+jest.mock('../../../config', () => ({
     config: {
         baseUrl: 'http://localhost:3000',
     },
