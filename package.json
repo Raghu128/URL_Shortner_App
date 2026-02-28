@@ -3,6 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "description": "A high-performance URL shortener with read/write split architecture",
+  "keywords": [
+    "url-shortener",
+    "system-design",
+    "nodejs",
+    "redis",
+    "postgresql",
+    "rabbitmq",
+    "high-performance",
+    "architecture",
+    "microservices"
+  ],
+  "author": "Raghu Kumar",
   "packageManager": "pnpm@10.6.2",
   "scripts": {
     "dev": "pnpm --filter api dev",
