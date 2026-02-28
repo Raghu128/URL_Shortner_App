@@ -484,15 +484,28 @@ This project follows industry best practices:
 
 ---
 
-## 📊 Performance Characteristics
+## 📊 Performance & Traffic Limits
 
-| Metric | Target | How |
-|--------|--------|-----|
-| **Redirect latency** | < 10ms (cache hit) | Redis sub-ms lookups |
-| **Redirect throughput** | 10K+ req/sec | Read replicas + Redis |
-| **Create latency** | < 50ms | Direct write to primary |
-| **Cache hit rate** | ~95% | 24h TTL on URL mappings |
-| **Uptime** | 99.99% | Health checks, graceful shutdown |
+This architecture is extremely lightweight on the Node.js server because of the async, fire-and-forget message queuing.
+
+### What a Single Server Can Handle
+A single **1-Core Node.js instance** running this setup can comfortably handle **5,000 to 10,000 read requests per second (RPS)**.
+- **Per Minute:** ~600,000 clicks
+- **Per Hour:** ~36 Million clicks
+- **Per Day:** ~864 Million clicks
+
+**Write traffic (URL Creation)** is heavier (~50 ms per request) because it intentionally passes through Redis, goes directly to the Primary PostgreSQL database, and relies on bcrypt for auth routes. A single core can handle **~500 - 1,000 write requests per second**.
+
+### Bottlenecks & How to Scale Past Them
+
+If your URL shortener goes viral, you will encounter these bottlenecks in this specific order. Here is how you scale past them:
+
+| When You Hit... | The Bottleneck Is... | Your Scaling Action |
+|----------------|----------------------|----------------------|
+| **10,000 RPS** | **Single-Core CPU Limit** | Node.js is single-threaded. Use **PM2 Cluster Mode** (`pm2 start server.js -i max`) or Kubernetes to spin up one instance per CPU core. An 8-core server instantly scales to **~80,000 RPS**. |
+| **65,535 RPS** | **Linux Port Exhaustion** | A single server only has ~65k network ports. You literally run out of TCP connections. Add a **Load Balancer (Nginx/ALB)** and spin up a second physical server to double your connection limit. |
+| **100,000+ RPS** | **Redis Max Load** | A single Redis instance maxes out around 100k-150k sub-millisecond lookups. You must migrate from a single Redis node to a **Redis Cluster** to shard the URL cache. |
+| **Massive Writes** | **PostgreSQL Connection Limits** | Too many API instances trying to write at once will crash Postgres. Use **PgBouncer** (already architected into our topology) to pool connections safely. |
 
 ---
 
