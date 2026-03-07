@@ -336,9 +336,10 @@ url-shortener/
 │
 ├── infra/                             # Infrastructure
 │   ├── docker-compose.dev.yml         # PostgreSQL, Redis, RabbitMQ
-│   └── nginx/nginx.conf              # Reverse proxy config
+│   ├── nginx/nginx.conf              # Reverse proxy config
 │
-└── package.json                       # npm workspaces root
+├── package.json                       # pnpm root package
+└── pnpm-workspace.yaml                # pnpm workspaces definition
 ```
 
 ---
@@ -348,19 +349,20 @@ url-shortener/
 ### Prerequisites
 
 - Node.js 20+
+- pnpm (Corepack enabled or `npm i -g pnpm`)
 - Docker & Docker Compose
 
 ### 1. Start Infrastructure
 
 ```bash
 # Start PostgreSQL (primary + replica), Redis, and RabbitMQ
-npm run docker:dev
+pnpm run docker:dev
 ```
 
 ### 2. Install Dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 3. Configure Environment
@@ -373,17 +375,17 @@ cp apps/api/.env.example apps/api/.env
 ### 4. Run Database Migrations
 
 ```bash
-cd apps/api && npx prisma migrate dev --name init
+pnpm run db:migrate
 ```
 
 ### 5. Start Servers
 
 ```bash
 # Terminal 1: Backend API (port 3000)
-npm run dev:api
+pnpm run dev:api
 
 # Terminal 2: Frontend (port 3001)
-npm run dev:web
+pnpm run dev:web
 ```
 
 Open `http://localhost:3001` in your browser.
