@@ -6,6 +6,8 @@ import { connectRedis, disconnectRedis } from './infrastructure/cache/redisClien
 import { connectQueue, disconnectQueue } from './infrastructure/queue/publisher';
 import { ExpirationWorker } from './workers/expirationWorker';
 
+import { AnalyticsWorker } from './workers/analyticsWorker';
+
 /**
  * Server entry point.
  *
@@ -42,6 +44,9 @@ async function main(): Promise<void> {
         const expirationWorker = new ExpirationWorker();
         expirationWorker.start(60_000); // Check for expired URLs every 60 seconds
 
+        const analyticsWorker = new AnalyticsWorker();
+        await analyticsWorker.start(); // Start consuming from RabbitMQ
+
         // 5. Graceful shutdown
         const shutdown = async (signal: string) => {
             logger.info({ signal }, 'Shutdown signal received, starting graceful shutdown...');
@@ -53,6 +58,7 @@ async function main(): Promise<void> {
 
             // Stop workers
             expirationWorker.stop();
+            await analyticsWorker.stop();
 
             // Disconnect infrastructure
             await Promise.allSettled([

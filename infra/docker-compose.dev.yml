@@ -1,6 +1,6 @@
 services:
   # ═══════════════════════════════════════
-  # PostgreSQL PRIMARY (Writes Only)
+  # PostgreSQL PRIMARY & REPLICA (Simulated)
   # ═══════════════════════════════════════
   pg-primary:
     image: postgres:16-alpine
@@ -9,33 +9,10 @@ services:
       POSTGRES_USER: urlshortener
       POSTGRES_PASSWORD: urlshortener
     ports:
-      - "5432:5432"
+      - "5432:5432" # Primary Connection
+      - "5433:5432" # Replica Connection (Simulated for Local Dev)
     volumes:
       - pgdata_primary:/var/lib/postgresql/data
-    command: >
-      postgres -c wal_level=replica -c max_wal_senders=3 -c max_replication_slots=3 -c hot_standby=on
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U urlshortener" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # ═══════════════════════════════════════
-  # PostgreSQL READ REPLICA (Reads Only)
-  # In dev: separate instance with same schema
-  # In prod: use streaming replication from primary
-  # ═══════════════════════════════════════
-  pg-replica:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: urlshortener
-      POSTGRES_USER: urlshortener
-      POSTGRES_PASSWORD: urlshortener
-    ports:
-      - "5433:5432"
-    volumes:
-      - pgdata_replica:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U urlshortener" ]
       interval: 5s
