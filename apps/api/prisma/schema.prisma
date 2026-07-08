@@ -39,6 +39,7 @@ model Url {
   expiresAt   DateTime? @map("expires_at")
   clickCount  BigInt    @default(0) @map("click_count")
   isActive    Boolean   @default(true) @map("is_active")
+  scanStatus  String    @default("pending") @map("scan_status") @db.VarChar(10)
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
@@ -47,5 +48,6 @@ model Url {
   @@index([shortCode], name: "idx_urls_short_code")
   @@index([userId], name: "idx_urls_user_id")
   @@index([expiresAt], name: "idx_urls_expires_at")
+  @@index([scanStatus], name: "idx_urls_scan_status")
   @@map("urls")
 }

@@ -7,6 +7,7 @@ import { connectQueue, disconnectQueue } from './infrastructure/queue/publisher'
 import { ExpirationWorker } from './workers/expirationWorker';
 
 import { AnalyticsWorker } from './workers/analyticsWorker';
+import { SafetyScanWorker } from './workers/safetyScanWorker';
 
 /**
  * Server entry point.
@@ -47,6 +48,9 @@ async function main(): Promise<void> {
         const analyticsWorker = new AnalyticsWorker();
         await analyticsWorker.start(); // Start consuming from RabbitMQ
 
+        const safetyScanWorker = new SafetyScanWorker();
+        await safetyScanWorker.start(); // Start consuming safety scan jobs
+
         // 5. Graceful shutdown
         const shutdown = async (signal: string) => {
             logger.info({ signal }, 'Shutdown signal received, starting graceful shutdown...');
@@ -59,6 +63,7 @@ async function main(): Promise<void> {
             // Stop workers
             expirationWorker.stop();
             await analyticsWorker.stop();
+            await safetyScanWorker.stop();
 
             // Disconnect infrastructure
             await Promise.allSettled([
@@ -77,7 +82,7 @@ async function main(): Promise<void> {
         // Handle unhandled rejections and uncaught exceptions
         process.on('unhandledRejection', (reason) => {
             logger.error({ reason }, 'Unhandled Promise Rejection');
-            // In production, you might want to exit and let the orchestrator restart
+             process.exit(1);
         });
 
         process.on('uncaughtException', (error) => {

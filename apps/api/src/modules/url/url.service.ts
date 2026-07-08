@@ -7,6 +7,9 @@ import { validateUrl } from '../../common/utils/urlValidator';
 import { ConflictError, NotFoundError, ValidationError } from '../../common/errors';
 import { CACHE_KEYS, CACHE_TTL } from '../../common/constants';
 import { logger } from '../../config/logger';
+import { publishSafetyScanJob } from '../../infrastructure/queue/publisher';
+import { v4 as uuidv4 } from 'uuid';
+import { prismaWrite } from '../../infrastructure/database/prismaClient';
 
 /**
  * URL Service — Business logic layer.
@@ -30,11 +33,17 @@ export class UrlService {
      * 4. Cache the mapping in Redis
      */
     async createShortUrl(dto: CreateUrlDto): Promise<Url> {
-        // 1. Validate URL
+        // 1. Validate URL format, protocol, domain blocklist (instant, no I/O)
         const validation = validateUrl(dto.originalUrl);
         if (!validation.valid) {
             throw new ValidationError(null, validation.reason);
         }
+
+        // ─ Safety scan is ASYNC (zero latency added to this request) ──────────────────────
+        // A scan job is published to RabbitMQ after creation.
+        // The SafetyScanWorker calls Google Safe Browsing and deactivates
+        // the URL if flagged — without any latency impact here.
+        // ─────────────────────────────────────────────────────────────────
 
         // 2. Handle custom alias
         if (dto.customAlias) {
@@ -51,35 +60,60 @@ export class UrlService {
                 expiresAt: dto.expiresAt,
             });
 
-            // Cache immediately
-            await this.cacheUrl(url.shortCode, url.originalUrl);
-            logger.info({ shortCode: url.shortCode, isCustom: true }, 'Short URL created');
+            // DO NOT cache here — the SafetyScanWorker caches the URL only
+            // after it passes the Google Safe Browsing check.
+            // Caching before scan would let Redis hits bypass the scanStatus guard.
+
+            // Fire-and-forget safety scan — zero latency added
+            publishSafetyScanJob({ shortCode: url.shortCode, originalUrl: url.originalUrl });
+
+            logger.info({ shortCode: url.shortCode, isCustom: true }, 'Short URL created (scan pending)');
 
             return url;
         }
 
         // 3. Auto-generate short code using Base62(auto-increment ID)
-        //    Strategy: Create the record first with a unique placeholder →
-        //    encode the returned auto-increment ID as Base62 → update with final code.
-        //    This guarantees zero collisions since each ID is unique.
-        const { v4: uuidv4 } = require('uuid');
-        const placeholder = `_${uuidv4().slice(0, 8)}`; // Unique temporary placeholder
+        //
+        // Problem with naive 2-step approach (INSERT placeholder → UPDATE real code):
+        //   - Window exists where record is in DB with invalid '_xxxxxxxx' short code
+        //   - Server crash between the two calls = ORPHAN RECORD stuck in DB forever
+        //   - Expiration worker could process the phantom placeholder record
+        //
+        // Fix: Prisma interactive transaction wraps both steps atomically.
+        //   If the UPDATE fails for any reason, the INSERT is automatically rolled back.
+        //   No orphan records can ever exist.
+        const finalUrl = await prismaWrite.$transaction(async (tx) => {
+            // Step A: INSERT with a unique temporary placeholder to get the auto-increment ID
+            const placeholder = `_${uuidv4().slice(0, 8)}`;
 
-        const url = await this.urlRepository.create({
-            shortCode: placeholder,
-            originalUrl: dto.originalUrl,
-            userId: dto.userId,
-            expiresAt: dto.expiresAt,
+            const created = await tx.url.create({
+                data: {
+                    shortCode: placeholder,
+                    originalUrl: dto.originalUrl,
+                    userId: dto.userId ?? null,
+                    expiresAt: dto.expiresAt ?? null,
+                },
+            });
+
+            // Step B: Encode the real ID to Base62 and update — all inside the same transaction
+            const shortCode = encodeToBase62(created.id);
+
+            return tx.url.update({
+                where: { id: created.id },
+                data: { shortCode },
+            });
         });
 
-        const shortCode = encodeToBase62(url.id);
+        const shortCode = finalUrl.shortCode;
 
-        // Update with the real short code
-        const finalUrl = await this.updateShortCode(url.id, shortCode);
+        // DO NOT cache here — the SafetyScanWorker caches the URL only
+        // after it passes the Google Safe Browsing check.
+        // Caching before scan would let Redis hits bypass the scanStatus guard.
 
-        // Cache the new mapping
-        await this.cacheUrl(shortCode, dto.originalUrl);
-        logger.info({ shortCode, id: Number(url.id) }, 'Short URL created');
+        // Fire-and-forget safety scan — zero latency added
+        publishSafetyScanJob({ shortCode, originalUrl: dto.originalUrl });
+
+        logger.info({ shortCode, id: Number(finalUrl.id) }, 'Short URL created (scan pending)');
 
         return finalUrl;
     }
@@ -94,6 +128,8 @@ export class UrlService {
      */
     async resolveUrl(shortCode: string): Promise<string> {
         // Tier 1: Cache lookup
+        // NOTE: Cached entries are always safe — the SafetyScanWorker evicts
+        //       unsafe URLs from Redis immediately after flagging them.
         const cached = await this.cache.get(`${CACHE_KEYS.URL_PREFIX}${shortCode}`);
         if (cached) {
             return cached;
@@ -114,6 +150,17 @@ export class UrlService {
         // Check expiration
         if (url.expiresAt && url.expiresAt < new Date()) {
             throw new NotFoundError('Short URL has expired');
+        }
+
+        // Safety scan check — only reached on cache miss (rare after warm-up).
+        // Blocks redirects during the brief window between creation and scan completion.
+        // 'unsafe' URLs are also caught here as a second line of defense (isActive
+        // check above catches them first, but this is defence-in-depth).
+        if (url.scanStatus === 'pending') {
+            throw new NotFoundError('This URL is being verified. Please try again in a moment.');
+        }
+        if (url.scanStatus === 'unsafe') {
+            throw new NotFoundError('Short URL not found'); // Don't reveal reason
         }
 
         // Populate cache for next request
@@ -212,15 +259,6 @@ export class UrlService {
         }
     }
 
-    /**
-     * Update the short code for a URL record (used after Base62 encoding).
-     * Direct prismaWrite since this is part of the create flow.
-     */
-    private async updateShortCode(id: bigint, shortCode: string): Promise<Url> {
-        const { prismaWrite } = require('../../infrastructure/database/prismaClient');
-        return prismaWrite.url.update({
-            where: { id },
-            data: { shortCode },
-        });
-    }
+    // updateShortCode() was removed — the two-step CREATE+UPDATE is now a single
+    // Prisma $transaction in createShortUrl(), which eliminates the orphan record window.
 }

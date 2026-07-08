@@ -458,18 +458,55 @@ cd apps/api && npm test
 
 ---
 
-## 🔒 Security
+## 🔒 Security & Resiliency
 
-| Feature | Implementation |
-|---------|---------------|
-| **Input Validation** | Zod schemas on all endpoints |
-| **Rate Limiting** | Redis sliding window (10 req/min on create) |
-| **JWT Auth** | Token-based with configurable expiry |
-| **Password Hashing** | bcrypt with 10 salt rounds |
-| **XSS Prevention** | URL protocol validation (blocks `javascript:`, `data:`) |
-| **Anti-Enumeration** | Same error message for wrong email vs wrong password |
-| **Security Headers** | Helmet middleware |
-| **No Detail Leaks** | Generic 500 for unexpected errors |
+This project is hardened against common web exploits and distributed attacks with production-grade security architectures:
+
+| Feature | Implementation | Threat Prevented |
+|---------|----------------|------------------|
+| **Async Malware Scanning** | Integrated with Google Safe Browsing API in a background worker queue | Open Redirect Abuse, Malware & Phishing distribution |
+| **Atomic Rate Limiting** | Race-condition-free Redis `SET NX EX` + `INCR` strategy | Denial of Service (DoS), Brute-forcing auth |
+| **Network Isolation** | Private Docker bridge topology (only Nginx exposed on port 80) | IP Spoofing (bypassing rate limiter via headers) |
+| **Ownership Verification** | BOLA/IDOR protection checking ownership before displaying analytics | Information Leakage, Unauthorized access |
+| **Input Validation** | Strict Zod schemas validating bodies, query parameters, and URL formats | Injection, malformed data, schema pollution |
+| **XSS Prevention** | URL protocol strict validation (allows only `http:` / `https:`) | Cross-Site Scripting via `javascript:` URIs |
+| **Password Hashing** | bcrypt with 12 rounds on secondary threads | Credentials theft / dictionary attacks |
+| **Anti-Enumeration** | Identical API error responses for invalid login credentials | Username/Email discovery mapping |
+| **Security Headers** | Nginx header hardening + Helmet.js middleware | Clickjacking, MIME-sniffing, XSS execution |
+
+---
+
+### 🛡️ Deep Dive: The Async Safe Browsing Pipeline
+
+To keep redirects sub-10ms, safety checks are completely decoupled from the hot path using **RabbitMQ**:
+
+```mermaid
+graph TD
+    User[Client] -->|1. Create URL| API[Express API]
+    API -->|2. Save to DB pending| DB[(PostgreSQL)]
+    API -->|3. Publish scan job| RMQ[RabbitMQ url_safety_scan]
+    API -->|4. Return Short URL instantly| User
+    
+    subgraph "Background Security Pipeline"
+        Worker[Safety Scan Worker] -->|5. Consume job| RMQ
+        Worker -->|6. Check Safety| GSB[Google Safe Browsing API]
+        GSB -->|7. Unsafe Verdict| Worker
+        Worker -->|8. Mark inactive & Evict| DB
+        Worker -.->|Evict from cache| Redis[(Redis Cache)]
+    end
+```
+
+### ⚡ Atomic Database Transactions
+
+To prevent **orphan records** under high concurrency or server failure, shortcode generation is wrapped in a single database transaction:
+```typescript
+const finalUrl = await prismaWrite.$transaction(async (tx) => {
+    const created = await tx.url.create({ data: { shortCode: placeholder, ... } });
+    const shortCode = encodeToBase62(created.id);
+    return tx.url.update({ where: { id: created.id }, data: { shortCode } });
+});
+```
+This guarantees that an insertion never completes without its matching Base62 code being generated and saved, ensuring 100% database consistency.
 
 ---
 

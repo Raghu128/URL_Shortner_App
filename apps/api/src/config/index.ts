@@ -30,6 +30,7 @@ export const config = {
     queue: {
         url: process.env.RABBITMQ_URL || 'amqp://localhost:5672',
         analyticsQueue: 'click_events',
+        safetyScanQueue: 'url_safety_scan',
     },
 
     // ─── Auth ───
@@ -56,6 +57,12 @@ export const config = {
         origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
     },
 
+    // ─── Google Safe Browsing ───
+    safeBrowsing: {
+        // Optional — if not set, the safety check is skipped (fail-open)
+        apiKey: process.env.GOOGLE_SAFE_BROWSING_API_KEY || '',
+    },
+
     // ─── Flags ───
     isDevelopment: (process.env.NODE_ENV || 'development') === 'development',
     isProduction: process.env.NODE_ENV === 'production',
@@ -67,8 +74,14 @@ export const config = {
  * Fail fast if any critical config is missing.
  */
 export function validateConfig(): void {
+    const isProduction = config.env === 'production';
     const required: Array<{ key: string; value: unknown }> = [
         { key: 'DATABASE_PRIMARY_URL', value: config.database.primaryUrl },
+        // In production, refuse to start if JWT_SECRET is still the default hardcoded value
+        ...(isProduction
+            ? [{ key: 'JWT_SECRET (must not be default in production)', value: config.auth.jwtSecret === 'dev-secret-change-me' ? undefined : config.auth.jwtSecret }]
+            : []
+        ),
     ];
 
     const missing = required.filter((r) => !r.value);

@@ -41,8 +41,8 @@ export class CacheService {
     /**
      * Set a value with TTL (in seconds).
      */
-    async set(key: string, value: string, ttlSeconds: number): Promise<void> {
-        await this.redis.set(key, value, 'EX', ttlSeconds);
+    async set(key: string, value: string | number, mode?: 'EX', ttlSeconds?: number, condition?: 'NX'): Promise<string | null> {
+        return await this.redis.set(key, value, mode, ttlSeconds, condition);
     }
 
     /**

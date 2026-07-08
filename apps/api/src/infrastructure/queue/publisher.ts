@@ -18,6 +18,11 @@ export async function connectQueue(): Promise<void> {
             durable: true, // Survives broker restart
         });
 
+        // Ensure the URL safety scan queue exists
+        await channel.assertQueue(config.queue.safetyScanQueue, {
+            durable: true,
+        });
+
         logger.info('✅ Connected to RabbitMQ');
 
         connection.on('error', (error) => {
@@ -69,6 +74,18 @@ export function publishClickEvent(data: {
     clickedAt: string;
 }): boolean {
     return publishToQueue(config.queue.analyticsQueue, data);
+}
+
+/**
+ * Publish a URL safety scan job.
+ * The SafetyScanWorker consumes this queue, calls Google Safe Browsing,
+ * and deactivates the URL if flagged — all without blocking URL creation.
+ */
+export function publishSafetyScanJob(data: {
+    shortCode: string;
+    originalUrl: string;
+}): boolean {
+    return publishToQueue(config.queue.safetyScanQueue, data);
 }
 
 /**

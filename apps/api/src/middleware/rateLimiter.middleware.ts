@@ -23,12 +23,25 @@ export function rateLimiter(maxRequests: number, windowSeconds: number) {
             const ip = req.ip || req.socket.remoteAddress || 'unknown';
             const key = `${CACHE_KEYS.RATE_LIMIT_PREFIX}${ip}`;
 
-            const current = await cacheService.incr(key);
+            // Use Redis SET with NX + EX for atomicity
+            let current: number;
 
-            // Set TTL on first request in window
-            if (current === 1) {
-                await cacheService.expire(key, windowSeconds);
+            // First request: create key with TTL atomically
+            const result = await cacheService.set(
+                key,
+                1,
+                'EX',
+                windowSeconds,
+                'NX'
+            );
+
+            if (result) {
+                current = 1;
+            } else {
+                // Existing key: increment counter
+                current = await cacheService.incr(key);
             }
+
 
             // Set rate limit headers
             res.setHeader('X-RateLimit-Limit', maxRequests);

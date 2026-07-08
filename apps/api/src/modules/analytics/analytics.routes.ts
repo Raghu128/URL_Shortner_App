@@ -8,7 +8,7 @@ import { authMiddleware } from '../../middleware/auth.middleware';
 // ─── Dependency Injection ───
 const urlRepository = new UrlRepository();
 const analyticsRepository = new AnalyticsRepository(urlRepository);
-const analyticsService = new AnalyticsService(analyticsRepository);
+const analyticsService = new AnalyticsService(analyticsRepository, urlRepository); // urlRepository for ownership check
 const analyticsController = new AnalyticsController(analyticsService);
 
 // ─── Routes (/api/v1/analytics) ───
